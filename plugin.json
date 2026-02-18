@@ -1,0 +1,25 @@
+{
+  "ver": 1,
+  "name": "Version Checker",
+  "icon": "ti-refresh",
+  "item_name": "Note",
+  "description": "Checks plugin version from GitHub on startup and notifies if an update is available",
+  "show_sidebar_items": true,
+  "show_cmdpal_items": true,
+  "views": [],
+  "fields": [],
+  "page_field_ids": [],
+  "sidebar_record_sort_field_id": "updated_at",
+  "sidebar_record_sort_dir": "desc",
+  "managed": {
+    "fields": false,
+    "views": false,
+    "sidebar": false
+  },
+  "custom": {
+    "githubRepo": "",
+    "version": "1.0.0",
+    "notifyOnNewVersion": true
+  },
+  "home": false
+}
