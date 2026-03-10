@@ -25,7 +25,7 @@ In Version Checker’s plugin settings / custom config:
 | Key | Description |
 |-----|-------------|
 | `__source_repo` | GitHub repo for this plugin. Use a full URL (e.g. `https://github.com/robbk17/thymer-version`).  Used so Version Checker itself appears in the check list. |
-| `version` | Version you consider “installed” for this plugin (e.g. `1.0.1`). Used for comparison. |
+| `version` | Top-level `version` field in `plugin.json`. Version you consider “installed” for this plugin (e.g. `1.0.2`). Used for comparison. |
 | `notifyOnNewVersion` | Optional, default `true`. If `false`, the startup check still runs but **no toast** is shown on load. Manual checks still show the toast. |
 | `showUpToDate` | Optional, default `false`. If `true`, the toast also lists plugins that are already up to date; if `false`, only plugins with updates (and any errors) are listed. |
 
@@ -36,15 +36,15 @@ On each **other** plugin (or collection) that you want included in the version c
 | Key | Where | Description |
 |-----|--------|-------------|
 | `__source_repo` | `custom.__source_repo` or top-level `__source_repo` | GitHub repo: full URL (e.g. `https://github.com/owner/repo`). If set, the plugin is included in the check. |
-| `version` | `custom.version` or top-level `version` | Installed version used for comparison (e.g. `1.0.0`). Supports leading `v` and dotted/tagged formats. |
+| `version` | Top-level `version` (or `custom.version` if you prefer) | Installed version used for comparison (e.g. `1.0.0`). Supports leading `v` and dotted/tagged formats. |
 
 Version Checker scans **all** non-trashed global plugins and collections and includes any that have `__source_repo` set (in custom or top-level config).
 
 ## Keeping your plugin’s version in sync
 
-If your plugin is checked by Version Checker (you set `__source_repo` and `version` on that plugin), you can keep `custom.version` in sync with the version you actually ship in `plugin.json`. That way Version Checker compares against the real deployed version.
+If your plugin is checked by Version Checker (you set `__source_repo` and `version` on that plugin), you can keep its configured version in sync with the version you actually ship in `plugin.json`. That way Version Checker compares against the real deployed version.
 
-**Version Checker** does this for itself automatically: on load it calls `syncInstalledVersion()`, which fetches `./plugin.json`, reads `version`, and updates its own `custom.version` via `saveConfiguration` if they differ.
+**Version Checker** can also do this automatically: on load you can call `syncInstalledVersion()`, which fetches `./plugin.json`, reads `version`, and updates its own stored `version` via `saveConfiguration` if they differ.
 
 For **your own** plugins that are included in the check, you can add the same behavior:
 
@@ -70,17 +70,15 @@ For **your own** plugins that are included in the check, you can add the same be
        if (!version) return;
 
        const cfg = this.getConfiguration() || {};
-       cfg.custom = cfg.custom || {};
-
-       if (cfg.custom.version !== version) {
-         cfg.custom.version = version;
+       if (cfg.version !== version) {
+         cfg.version = version;
          await this.saveConfiguration(cfg);
        }
      } catch (_) {}
    }
    ```
 
-When the plugin loads, it fetches its own `plugin.json`, reads `version`, and updates `custom.version` if they differ. Version Checker will then report the correct “current” version.
+When the plugin loads, it fetches its own `plugin.json`, reads `version`, and updates the stored `version` field if they differ. Version Checker will then report the correct “current” version.
 
 ## Version comparison
 
@@ -104,4 +102,4 @@ If the repo is missing, private, or the request fails, the toast shows an error 
 - `plugin.json` – plugin configuration
 - `README.md` – this file
 
-Install the plugin in your Thymer workspace. Set `custom.__source_repo` and `custom.version` on Version Checker so it checks itself, and set `__source_repo` (and optionally `version`) on any other plugin or collection you want included in the version check.
+Install the plugin in your Thymer workspace. Set `__source_repo` and `version` on Version Checker so it checks itself, and set `__source_repo` (and optionally `version`) on any other plugin or collection you want included in the version check.
