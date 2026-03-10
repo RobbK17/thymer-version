@@ -4,6 +4,8 @@
 	"icon": "ti-refresh",
 	"item_name": "Note",
 	"description": "Checks plugin version from GitHub on startup and notifies if an update is available",
+	"__source_repo": "https://github.com/robbk17/thymer-version",
+	"version": "1.0.2",
 	"show_sidebar_items": true,
 	"show_cmdpal_items": true,
 	"views": [],
@@ -17,8 +19,6 @@
 		"sidebar": false
 	},
 	"custom": {
-		"__source_repo": "https://github.com/robbk17/thymer-version",
-		"version": "1.0.2",
 		"notifyOnNewVersion": true,
 		"showUpToDate": false
 	},
