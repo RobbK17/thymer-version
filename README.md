@@ -1,10 +1,12 @@
 # Version Checker – Thymer plugin
 
-A Thymer **global plugin** that checks versions from GitHub for **all** plugins (and collections) in your workspace that have `githubRepo` set. On startup and on demand, it shows **one combined toast**: which plugins are up to date, which have updates, and any errors.
+A Thymer **global plugin** that checks versions from GitHub for **all** plugins (and collections) in your workspace that have `__source_repo` set. On startup and on demand, it shows **one combined toast**: which plugins are up to date, which have updates, and any errors.
+
+**Note:** `__source_repo` replaces the original `githubRepo` config key. Use `__source_repo` on Version Checker and on any plugin or collection you want included in the version check.
 
 ## What it does
 
-- **On startup**: Finds every global plugin and collection that has `githubRepo` configured (in `custom` or top-level config). For each, fetches the latest version from GitHub and compares it to the plugin’s `version`. Shows a single toast with:
+- **On startup**: Finds every global plugin and collection that has `__source_repo` configured (in `custom` or top-level config). For each, fetches the latest version from GitHub and compares it to the plugin’s `version`. Shows a single toast with:
   - **Up to date** – plugin name and installed version
   - **Updates available** – plugin name, latest version, and your version
   - **Errors** – e.g. repo not found, no version in GitHub, or API error
@@ -22,9 +24,10 @@ In Version Checker’s plugin settings / custom config:
 
 | Key | Description |
 |-----|-------------|
-| `githubRepo` | GitHub repo for this plugin in `owner/repo` form (e.g. `RobbK17/thymer-version`). Used so Version Checker itself appears in the check list. |
+| `__source_repo` | GitHub repo for this plugin. Use a full URL (e.g. `https://github.com/robbk17/thymer-version`).  Used so Version Checker itself appears in the check list. |
 | `version` | Version you consider “installed” for this plugin (e.g. `1.0.1`). Used for comparison. |
 | `notifyOnNewVersion` | Optional, default `true`. If `false`, the startup check still runs but **no toast** is shown on load. Manual checks still show the toast. |
+| `showUpToDate` | Optional, default `false`. If `true`, the toast also lists plugins that are already up to date; if `false`, only plugins with updates (and any errors) are listed. |
 
 ### Any plugin you want to be checked
 
@@ -32,14 +35,14 @@ On each **other** plugin (or collection) that you want included in the version c
 
 | Key | Where | Description |
 |-----|--------|-------------|
-| `githubRepo` | `custom.githubRepo` or top-level `githubRepo` (casing `githubrepo` also supported) | GitHub repo in `owner/repo` form. If set, the plugin is included in the check. |
+| `__source_repo` | `custom.__source_repo` or top-level `__source_repo` | GitHub repo: full URL (e.g. `https://github.com/owner/repo`). If set, the plugin is included in the check. |
 | `version` | `custom.version` or top-level `version` | Installed version used for comparison (e.g. `1.0.0`). Supports leading `v` and dotted/tagged formats. |
 
-Version Checker scans **all** non-trashed global plugins and collections and includes any that have `githubRepo` set (in custom or top-level config).
+Version Checker scans **all** non-trashed global plugins and collections and includes any that have `__source_repo` set (in custom or top-level config).
 
 ## Keeping your plugin’s version in sync
 
-If your plugin is checked by Version Checker (you set `githubRepo` and `version` on that plugin), you can keep `custom.version` in sync with the version you actually ship in `plugin.json`. That way Version Checker compares against the real deployed version.
+If your plugin is checked by Version Checker (you set `__source_repo` and `version` on that plugin), you can keep `custom.version` in sync with the version you actually ship in `plugin.json`. That way Version Checker compares against the real deployed version.
 
 **Version Checker** does this for itself automatically: on load it calls `syncInstalledVersion()`, which fetches `./plugin.json`, reads `version`, and updates its own `custom.version` via `saveConfiguration` if they differ.
 
@@ -101,4 +104,4 @@ If the repo is missing, private, or the request fails, the toast shows an error 
 - `plugin.json` – plugin configuration
 - `README.md` – this file
 
-Install the plugin in your Thymer workspace. Set `custom.githubRepo` and `custom.version` on Version Checker so it checks itself, and set `githubRepo` (and optionally `version`) on any other plugin or collection you want included in the version check.
+Install the plugin in your Thymer workspace. Set `custom.__source_repo` and `custom.version` on Version Checker so it checks itself, and set `__source_repo` (and optionally `version`) on any other plugin or collection you want included in the version check.

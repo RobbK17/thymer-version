@@ -17,9 +17,10 @@
 		"sidebar": false
 	},
 	"custom": {
-		"githubRepo": "RobbK17/thymer-version",
-		"version": "1.0.1",
-		"notifyOnNewVersion": true
+		"__source_repo": "https://github.com/robbk17/thymer-version",
+		"version": "1.0.2",
+		"notifyOnNewVersion": true,
+		"showUpToDate": false
 	},
 	"home": false
 }

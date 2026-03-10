@@ -1,14 +1,15 @@
 // Version Checker - Thymer global plugin
-// On load: gets all plugins, checks each one's githubRepo/version against GitHub,
+// On load: gets all plugins, checks each one's __source_repo/version against GitHub,
 // then shows one combined message for all plugins that have updates.
+// version 1.0.2
 
 class Plugin extends AppPlugin {
 
-  async onLoad() {
-    await this.syncInstalledVersion();
+  onLoad() {
     const config = this.getConfiguration();
     const custom = config.custom || {};
     const notify = custom.notifyOnNewVersion !== false;
+    this.showUpToDate = custom.showUpToDate !== false;
 
     // Run check for all plugins on startup (async, no await)
     this.checkAllPluginsVersions(notify);
@@ -45,40 +46,25 @@ class Plugin extends AppPlugin {
     return 0;
   }
 
-  /** Set version . */
-  async syncInstalledVersion() {
+  /** Parse a full GitHub URL or owner/repo string into { owner, repoNamespace }. */
+  parseGitHubRepo(source) {
     try {
-      const res = await fetch("./plugin.json", { cache: "no-store" });
-      if (!res.ok) return;
-
-      const json = await res.json();
-      const version = json.version;
-      if (!version) return;
-
-      const cfg = this.getConfiguration() || {};
-      cfg.custom = cfg.custom || {};
-
-      if (cfg.custom.version !== version) {
-        cfg.custom.version = version;
-        await this.saveConfiguration(cfg);
-      }
-    } catch (_) {}
+      const url = new URL(source.trim());
+      const parts = url.pathname.replace(/^\//, "").replace(/\.git$/, "").split("/");
+      if (parts.length >= 2) return { owner: parts[0], repoNamespace: parts[1] };
+    } catch (_) {
+      // Not a URL — fall back to treating it as owner/repo
+      const parts = source.split("/").map(s => s.trim());
+      if (parts.length >= 2) return { owner: parts[0], repoNamespace: parts[1] };
+    }
+    return null;
   }
 
-  /** Parse GitHub API error response into a short message. */
-  async parseGitHubError(res) {
-    try {
-      const data = await res.json();
-      const msg = data && (data.message || data.error);
-      if (msg) return String(msg);
-    } catch (_) {}
-    return res.statusText || "HTTP " + res.status;
-  }
-
-  /** Fetch version from plugin.json via canonical GitHub Contents API (GET /repos/{owner}/{repo}/contents/plugin.json). Returns version string, or { error } on API error. */
-  async fetchVersionFromPluginJson(repo) {
-    const [owner, repoNamespace] = repo.split("/").map(s => s.trim());
-    if (!owner || !repoNamespace) return null;
+  /** Fetch version from plugin.json via canonical GitHub Contents API (GET /repos/{owner}/{repo}/contents/plugin.json). */
+  async fetchVersionFromPluginJson(source) {
+    const parsed = this.parseGitHubRepo(source);
+    if (!parsed) return null;
+    const { owner, repoNamespace } = parsed;
     const path = "plugin.json";
     const url = "https://api.github.com/repos/" + encodeURIComponent(owner) + "/" + encodeURIComponent(repoNamespace) + "/contents/" + encodeURIComponent(path);
     const headers = {
@@ -87,11 +73,7 @@ class Plugin extends AppPlugin {
     };
     try {
       const res = await fetch(url, { headers });
-      if (!res.ok) {
-        const msg = await this.parseGitHubError(res);
-        const hint = res.status === 404 ? " (repo public? plugin.json at repo root?)" : "";
-        return { error: msg + hint };
-      }
+      if (!res.ok) return null;
       const data = await res.json();
       if (!data.content || data.encoding !== "base64") return null;
       const raw = atob(data.content.replace(/\s/g, ""));
@@ -99,168 +81,193 @@ class Plugin extends AppPlugin {
       const custom = (json && json.custom) || {};
       const version = (custom.version || json.version || "").trim();
       return version || null;
-    } catch (e) {
-      return { error: (e && e.message) || String(e) };
+    } catch (_) {
+      return null;
     }
   }
 
-  /** Fetch latest version: plugin.json first, then releases/latest, then tags. Returns { version } or { error }. */
-  async fetchLatestVersion(repo) {
-    const [owner, repoNamespace] = repo.split("/").map(s => s.trim());
-    if (!owner || !repoNamespace) return { error: "Invalid repo (use owner/repo)" };
+  /** Fetch latest version: plugin.json (default branch) first, then releases/latest, then tags. */
+  async fetchLatestVersion(source) {
+    const parsed = this.parseGitHubRepo(source);
+    if (!parsed) return null;
+    const { owner, repoNamespace } = parsed;
     const apiBase = "https://api.github.com/repos/" + encodeURIComponent(owner) + "/" + encodeURIComponent(repoNamespace);
     const headers = {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28"
     };
     try {
-      const fromPluginJson = await this.fetchVersionFromPluginJson(repo);
-      if (typeof fromPluginJson === "string") return { version: fromPluginJson };
-      if (fromPluginJson && fromPluginJson.error) return { error: fromPluginJson.error };
+      const fromPluginJson = await this.fetchVersionFromPluginJson(source);
+      if (fromPluginJson) return fromPluginJson;
 
       let latestTag = null;
       const releaseRes = await fetch(apiBase + "/releases/latest", { headers });
       if (releaseRes.status === 404) {
         const tagsRes = await fetch(apiBase + "/tags?per_page=1", { headers });
-        if (!tagsRes.ok) {
-          const msg = await this.parseGitHubError(tagsRes);
-          const hint = tagsRes.status === 404 ? " (repo exists and is public?)" : "";
-          return { error: msg + hint };
+        if (tagsRes.ok) {
+          const tags = await tagsRes.json();
+          if (Array.isArray(tags) && tags.length > 0 && tags[0].name) {
+            return tags[0].name;
+          }
         }
-        const tags = await tagsRes.json();
-        if (Array.isArray(tags) && tags.length > 0 && tags[0].name) {
-          return { version: tags[0].name };
+        return null;
+      }
+      if (releaseRes.ok) {
+        const data = await releaseRes.json();
+        if (data && data.tag_name) latestTag = data.tag_name;
+      }
+      if (!latestTag) {
+        const tagsRes = await fetch(apiBase + "/tags?per_page=1", { headers });
+        if (tagsRes.ok) {
+          const tags = await tagsRes.json();
+          if (Array.isArray(tags) && tags.length > 0 && tags[0].name) {
+            latestTag = tags[0].name;
+          }
         }
-        return { version: null };
       }
-      if (!releaseRes.ok) {
-        const msg = await this.parseGitHubError(releaseRes);
-        const hint = releaseRes.status === 404 ? " (repo exists and is public?)" : "";
-        return { error: msg + hint };
-      }
-      const releaseData = await releaseRes.json();
-      if (releaseData && releaseData.tag_name) return { version: releaseData.tag_name };
-
-      const tagsRes = await fetch(apiBase + "/tags?per_page=1", { headers });
-      if (!tagsRes.ok) {
-        const msg = await this.parseGitHubError(tagsRes);
-        const hint = tagsRes.status === 404 ? " (repo exists and is public?)" : "";
-        return { error: msg + hint };
-      }
-      const tags = await tagsRes.json();
-      if (Array.isArray(tags) && tags.length > 0 && tags[0].name) {
-        return { version: tags[0].name };
-      }
-      return { version: null };
-    } catch (e) {
-      return { error: (e && e.message) || String(e) };
+      return latestTag;
+    } catch (_) {
+      return null;
     }
   }
 
-  /** Ensure we have an array of plugin/collection items (API may return array or object). Prefer active-only keys if present. */
-  toPluginArray(raw, keys, activeKeys = ["active", "active_plugins", "active_collections", "non_trashed"]) {
+  /** Ensure we have an array of plugin/collection items (API may return array or object). */
+  toPluginArray(raw, keys) {
     if (Array.isArray(raw)) return raw;
     if (raw && typeof raw === "object") {
-      for (const k of activeKeys) {
-        if (Array.isArray(raw[k])) return raw[k];
-      }
       for (const k of keys) {
         if (Array.isArray(raw[k])) return raw[k];
       }
     }
     return [];
   }
-
-  /** True if list item or plugin API indicates trashed (API may use trashed, in_trash, isTrashed, etc.). */
-  isPluginTrashed(p, pluginApi) {
-    if (p && (p.trashed === true || p.in_trash === true || p.isTrashed === true || p.inTrash === true || p.deleted === true)) return true;
-    if (pluginApi && typeof pluginApi === "object" && (pluginApi.trashed === true || pluginApi.isTrashed === true)) return true;
-    return false;
-  }
-
-  /** Get list of all plugins with githubRepo set, total active count, and names of all active plugins. */
+  
+  /** Get list of all plugins with __source_repo set, and total installed count. */
   async getPluginsToCheck() {
     const list = [];
-    const activeNames = [];
     let totalInstalled = 0;
+    let skipped = [];
+  
     try {
-      const [globalPluginsRaw, collectionsRaw] = await Promise.all([
-        this.data.getAllGlobalPlugins(),
-        this.data.getAllCollections()
-      ]);
-      // Use full lists (no activeKeys) so we include every plugin with githubRepo, not just "active" subset
-      const globalPlugins = this.toPluginArray(globalPluginsRaw, ["global_plugins", "plugins", "plugin"], []);
-      const collections = this.toPluginArray(collectionsRaw, ["collection_plugins", "collections", "collection"], []);
-      const collectionGuids = new Set(collections.map(c => (c.guid || c.id || c.plugin_guid)).filter(Boolean));
-      const all = [...globalPlugins, ...collections];
-      for (const p of all) {
+      const globalPluginsRaw = await this.data.getAllGlobalPlugins();
+      const globalPlugins = this.toPluginArray(globalPluginsRaw, ["global_plugins", "plugins", "plugin"]);
+      totalInstalled = globalPlugins.length;
+  
+      for (const p of globalPlugins) {
+        const rawName = p.name || p.label || "Unnamed";
         try {
           const guid = p.guid || p.id || p.plugin_guid;
-          if (!guid) continue;
-          if (this.isPluginTrashed(p, null)) continue;
-          const pluginApi = this.data.getPluginByGuid(guid);
-          if (!pluginApi) continue;
-          if (this.isPluginTrashed(p, pluginApi)) continue;
-          totalInstalled++;
-          const config = pluginApi.getConfiguration();
-          const custom = (config && config.custom) || {};
-          const name = (config && config.name) || p.name || p.label || "Unnamed";
-          if (!collectionGuids.has(guid)) activeNames.push(name);
-          const githubRepo = (custom.githubRepo || custom.githubrepo || (config && (config.githubRepo || config.githubrepo)) || "").trim();
-          const version = (custom.version || (config && config.version) || "0.0.0").trim();
-          if (githubRepo) {
-            list.push({ guid, name, githubRepo, version });
+          if (!guid) {
+            skipped.push(rawName + ": no guid found");
+            continue;
           }
-        } catch (_) {
-          // Skip this plugin, continue with the rest
+  
+          let name = rawName;
+          let __source_repo = "";
+          let version = "";
+  
+          // 1. Check top-level raw object
+          __source_repo = (p.__source_repo || "").trim();
+          version = (p.version || "").trim();
+  
+          // 2. Check p.configuration.custom and p.configuration
+          if (!__source_repo) {
+            const rawConfig = p.configuration || null;
+            const rawCustom = (rawConfig && rawConfig.custom) || null;
+            if (rawCustom) {
+              __source_repo = (rawCustom.__source_repo || "").trim();
+              version = (rawCustom.version || version || "").trim();
+            }
+            if (!__source_repo && rawConfig) {
+              __source_repo = (rawConfig.__source_repo || "").trim();
+              version = (rawConfig.version || version || "").trim();
+            }
+            if (rawConfig) name = rawConfig.name || rawName;
+          }
+  
+          // 3. Check p.custom
+          if (!__source_repo) {
+            const pCustom = p.custom || null;
+            if (pCustom) {
+              __source_repo = (pCustom.__source_repo || "").trim();
+              version = (pCustom.version || version || "").trim();
+            }
+          }
+  
+          // 4. Fall back to getPluginByGuid — checks config, config.custom
+          if (!__source_repo) {
+            const pluginApi = this.data.getPluginByGuid(guid);
+            if (!pluginApi) {
+              skipped.push(rawName + ": not returned by getPluginByGuid (possibly disabled)");
+              continue;
+            }
+            const config = pluginApi.getConfiguration();
+            if (config) {
+              const apiCustom = config.custom || null;
+              __source_repo = (config.__source_repo || (apiCustom && apiCustom.__source_repo) || "").trim();
+              version = (config.version || (apiCustom && apiCustom.version) || version || "").trim();
+              name = config.name || rawName;
+            }
+          }
+  
+          if (!version) version = "0.0.0";
+  
+          if (__source_repo) {
+            list.push({ guid, name, __source_repo, version });
+          }
+  
+        } catch (err) {
+          skipped.push(rawName + ": error during inspection (" + (err && err.message || "unknown") + ")");
         }
       }
-    } catch (_) {
-      // ignore
+    } catch (err) {
+      // ignore top-level fetch failure
     }
-    return { list, totalInstalled, activeNames };
+  
+    return { list, totalInstalled, skipped };
   }
 
-  /** Check all plugins that have githubRepo set; show one combined message. */
+
+  /** Check all plugins that have __source_repo set; show one combined message. */
   async checkAllPluginsVersions(showToast) {
-    const { list: plugins, totalInstalled, activeNames } = await this.getPluginsToCheck();
-
+    const { list: plugins, totalInstalled, skipped } = await this.getPluginsToCheck();
     const messages = [];
-    const upToDate = [];
     const errors = [];
-
+    const upToDate = [];
+  
     for (const p of plugins) {
       try {
-        const result = await this.fetchLatestVersion(p.githubRepo);
-        if (result.error) {
-          errors.push(p.name + ": " + result.error);
+        const latestTag = await this.fetchLatestVersion(p.__source_repo);
+        if (latestTag === null) {
+          errors.push(p.name + ": could not fetch version from GitHub");
           continue;
         }
-        if (result.version === null) {
-          errors.push(p.name + ": version not in GitHub");
-          continue;
-        }
-        const cmp = this.compareVersions(result.version, p.version);
+        const cmp = this.compareVersions(latestTag, p.version);
         if (cmp > 0) {
-          messages.push(p.name + ": latest " + result.version + " (you have " + p.version + ")");
+          messages.push(p.name + ": latest " + latestTag + " (you have " + p.version + ")");
         } else {
-          // cmp === 0 (same) or cmp < 0 (installed newer than GitHub)
           upToDate.push(p.name + ": up to date (" + p.version + ")");
         }
-      } catch (e) {
+      } catch (_) {
         errors.push(p.name + ": check failed");
       }
     }
-
-    if (showToast && (messages.length > 0 || upToDate.length > 0 || errors.length > 0)) {
-      const countLine = plugins.length + " plugin(s) with version check (githubRepo set)";
-      const lines = [countLine, "", ...upToDate, ...messages, ...errors];
-      const escaped = lines.map(l => ("" + l).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")).join("<br>");
+  
+    if (showToast && (messages.length > 0 || errors.length > 0 || skipped.length > 0 || upToDate.length > 0)) {
+      const lines = [
+        plugins.length + " of " + totalInstalled + " plugin(s) with version check\n",
+        ...messages,
+        ...errors,
+        ...(this.showUpToDate && upToDate.length > 0 ? ["\nUp to date (" + upToDate.length + "):"] : []),
+        ...(this.showUpToDate ? upToDate : []),
+        ...(skipped.length > 0 ? ["Skipped (" + skipped.length + "):"] : []),
+        ...skipped
+      ];
       this.ui.addToaster({
         title: messages.length > 0 ? "Plugin updates available" : "Version Checker",
-        messageHTML: '<div style="max-height: 60vh; overflow-y: auto; white-space: pre-wrap; word-break: break-word;">' + escaped + "</div>",
+        message: lines.join("\n"),
         dismissible: true,
-        autoDestroyTime: 12000
+        autoDestroyTime: 3000
       });
     }
   }
