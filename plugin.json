@@ -5,7 +5,7 @@
 	"item_name": "Note",
 	"description": "Checks plugin version from GitHub on startup and notifies if an update is available",
 	"__source_repo": "https://github.com/robbk17/thymer-version",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"show_sidebar_items": true,
 	"show_cmdpal_items": true,
 	"views": [],

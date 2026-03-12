@@ -1,7 +1,7 @@
 // Version Checker - Thymer global plugin
 // On load: gets all plugins, checks each one's __source_repo/version against GitHub,
 // then shows one combined message for all plugins that have updates.
-// version 1.0.2
+// version 1.0.3
 
 class Plugin extends AppPlugin {
 
@@ -253,15 +253,20 @@ class Plugin extends AppPlugin {
       }
     }
   
-    if (showToast && (messages.length > 0 || errors.length > 0 || skipped.length > 0 || upToDate.length > 0)) {
+    const shouldShowToast =
+      showToast &&
+      (messages.length > 0 || errors.length > 0 || (this.showUpToDate && upToDate.length > 0));
+
+    if (shouldShowToast) {
+      const showSkipped = (messages.length > 0 || errors.length > 0) && skipped.length > 0;
       const lines = [
         plugins.length + " of " + totalInstalled + " plugin(s) with version check\n",
         ...messages,
         ...errors,
         ...(this.showUpToDate && upToDate.length > 0 ? ["\nUp to date (" + upToDate.length + "):"] : []),
         ...(this.showUpToDate ? upToDate : []),
-        ...(skipped.length > 0 ? ["Skipped (" + skipped.length + "):"] : []),
-        ...skipped
+        ...(showSkipped ? ["\nSkipped (" + skipped.length + "):"] : []),
+        ...(showSkipped ? skipped : [])
       ];
       this.ui.addToaster({
         title: messages.length > 0 ? "Plugin updates available" : "Version Checker",
